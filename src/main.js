@@ -48,7 +48,8 @@ app.innerHTML=`
     <aside><div class="dash-brand">SESSION <b>#2048</b></div><button class="active">Overview</button><button>Bowling</button><button>Batting</button><button>Fielding</button><button>Video</button></aside>
     <div class="dash-main">
       <div class="metric-row"><div><small>AVG SPEED</small><strong>124.8 <i>km/h</i></strong><span class="up">↑ 3.2%</span></div><div><small>DOT BALLS</small><strong>58%</strong><span>21 / 36</span></div><div><small>MAX SPEED</small><strong>132.1 <i>km/h</i></strong><span>Ball 27</span></div><div><small>BOUNDARIES</small><strong>4</strong><span>conceded</span></div></div>
-      <div class="charts"><div class="chart"><div class="chart-title">Bowling line & length</div><div class="heat"><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div><div class="axis"><span>SHORT</span><span>GOOD</span><span>FULL</span><span>YORKER</span></div></div><div class="insight"><div class="chart-title">AI COACHING INSIGHTS</div><p><b>01</b> Good-length accuracy is your strongest area.</p><p><b>02</b> Pace dropped after the 4th over.</p><p><b>03</b> Short balls generated attacking shots.</p><button>View full report →</button></div></div>
+      <div class="charts"><div class="chart"><div class="chart-title">Bowling line & length</div><div class="heat"><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div><div class="axis"><span>SHORT</span><span>GOOD</span><span>FULL</span><span>YORKER</span></div></div><div class="insight"><div class="chart-title">AI COACHING INSIGHTS</div><p><b>01</b> Good-length accuracy is your strongest area.</p><p><b>02</b> Pace dropped after the 4th over.</p><p><b>03</b> Short balls generated attacking shots.</p><button>View full report →</button></div>
+      <div class="jev-panel"><div class="chart-title">JEV DECISION LAYER</div><div class="jev-grid"><div><span>DELIVERY</span><strong id="jevDelivery">GOOD LENGTH</strong><small id="jevDeliveryConf">Confidence 87%</small></div><div><span>REVIEW</span><strong id="jevReview">NO</strong><small id="jevReviewConf">Decision confidence 91%</small></div><div><span>QUALITY</span><strong id="jevQuality">GOOD</strong><small>Structured decision</small></div></div></div></div>
     </div>
   </div>
 </section>
@@ -74,4 +75,13 @@ document.querySelector('#watchBtn').addEventListener('click',()=>document.queryS
 document.querySelector('#close').addEventListener('click',close);
 document.querySelector('#drop').addEventListener('click',()=>modalInput.click());
 modalInput.addEventListener('change',()=>{const f=modalInput.files[0];if(f)selected.textContent=`Selected: ${f.name} · ${(f.size/1048576).toFixed(1)} MB`});
-document.querySelector('#start').addEventListener('click',()=>{const f=modalInput.files[0];if(!f){selected.textContent='Please choose a video first.';return}selected.textContent='Video received. Analysis pipeline ready.'});
+async function runJevDecision(f){
+  const video=document.createElement('video'); video.preload='metadata'; video.src=URL.createObjectURL(f);
+  await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=reject});
+  const state={file_name:f.name,file_size_mb:Number((f.size/1048576).toFixed(2)),duration_seconds:Number(video.duration.toFixed(2)),width:video.videoWidth,height:video.videoHeight};
+  URL.revokeObjectURL(video.src);
+  const res=await fetch('/api/jev',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state})});
+  if(!res.ok) throw new Error('Jev API unavailable');
+  return res.json();
+}
+document.querySelector('#start').addEventListener('click',async()=>{const f=modalInput.files[0];if(!f){selected.textContent='Please choose a video first.';return}selected.textContent='Video received. Sending structured evidence to Jev…';try{const result=await runJevDecision(f);const answers=result.answers||{};const d=answers.delivery_type;const q=answers.video_quality;const rr=answers.needs_review;const delivery=d?.choice||'UNCERTAIN';const quality=q?.choice||'UNKNOWN';const review=(rr?.noul??0)<0.5?'NO':'YES';const dc=d?.confidence?Math.round(d.confidence*100):null;const rc=rr?.noul!=null?Math.round(Math.max(rr.noul,1-rr.noul)*100):null;document.querySelector('#jevDelivery').textContent=delivery.toUpperCase();document.querySelector('#jevDeliveryConf').textContent=dc?('Confidence '+dc+'%'):'Decision returned';document.querySelector('#jevReview').textContent=review;document.querySelector('#jevReviewConf').textContent=rc?('Decision confidence '+rc+'%'):'Decision returned';document.querySelector('#jevQuality').textContent=quality.toUpperCase();selected.textContent='Jev decision complete. Evidence was classified with confidence-aware outputs.'}catch(e){selected.textContent='Demo mode: Jev is wired into the app, but the server API key is not configured yet.'}});
