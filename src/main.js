@@ -16,8 +16,8 @@ app.innerHTML=`
     <div class="pill"><span></span> AI cricket intelligence from ordinary video</div>
     <h1>Turn cricket footage into <strong>actionable insight.</strong></h1>
     <p>Track players. Follow the ball. Understand every delivery. CricketVision transforms a phone recording into professional-style cricket analytics.</p>
-    <div class="hero-actions"><button class="primary" id="uploadBtn">Analyze a video <b>→</b></button><button class="ghost" id="watchBtn">See how it works <b>▶</b></button></div>
-    <div class="trust"><span>✓ No specialist hardware</span><span>✓ Works with 30–240 FPS</span><span>✓ Confidence-aware AI</span></div>
+    <div class="hero-actions"><button class="primary" id="uploadBtn">Record a test delivery <b>●</b></button><button class="ghost" id="watchBtn">See recording setup <b>↓</b></button></div>
+    <div class="trust"><span>✓ 60 FPS required</span><span>✓ Side-on camera only</span><span>✓ Bright, even lighting</span></div>
   </div>
   <div class="hero-card">
     <div class="video-top"><span>LIVE ANALYSIS</span><span class="live"><i></i> PROCESSING</span></div>
@@ -60,22 +60,180 @@ app.innerHTML=`
   <div class="use-grid"><div><b>ACADEMIES</b><h3>Coach every ball.</h3><p>Automated training reports and player development history.</p></div><div><b>CLUBS</b><h3>Analyze every match.</h3><p>Turn existing match recordings into team analytics.</p></div><div><b>MEDIA</b><h3>Overlay intelligence.</h3><p>Generate live-style graphics, statistics and digital content.</p></div><div><b>PLAYERS</b><h3>Train with evidence.</h3><p>Understand pace, shot selection and recurring weaknesses.</p></div></div>
 </section>
 
-<section class="cta"><div><div class="eyebrow">CRICKETVISION AI</div><h2>Your camera already has the data.</h2><p>We're building the intelligence layer that makes it useful.</p><button class="primary" id="ctaBtn">Analyze a video <b>→</b></button></div></section>
+<section class="cta"><div><div class="eyebrow">CRICKETVISION AI</div><h2>Record it the right way.</h2><p>CricketVision will analyze the controlled test recording frame by frame.</p><button class="primary" id="ctaBtn">Analyze a video <b>→</b></button></div></section>
 </main>
 
 <footer><div class="brand"><span class="logo">CV</span><span>CricketVision</span><em>AI</em></div><span>AI-powered cricket video intelligence</span><span>© 2026 CricketVision</span></footer>
 
-<input id="fileInput" type="file" accept="video/*" hidden>
-<div id="modal" class="modal"><div class="modal-card"><button class="close" id="close">×</button><div class="eyebrow">VIDEO ANALYSIS</div><h2>Upload a delivery</h2><p>Choose a cricket video to start the analysis workflow.</p><label class="drop" id="drop">Drop video here or <b>browse files</b><input id="modalInput" type="file" accept="video/*" hidden></label><div id="selected" class="selected"></div><button class="primary full" id="start">Start analysis →</button></div></div>
+<div id="modal" class="modal"><div class="modal-card recorder-card"><button class="close" id="close">×</button><div class="eyebrow">CONTROLLED TEST CAPTURE</div><h2>Record a delivery</h2><p>CricketVision accepts camera recordings only for this test. The app will reject footage that is not captured at 60 FPS.</p>
+<div class="setup-grid">
+  <div class="setup-item"><b>01</b><span>60 FPS</span><small>Use 1080p / 60 FPS or higher.</small></div>
+  <div class="setup-item"><b>02</b><span>90° SIDE-ON</span><small>Camera square to the pitch, bowling-arm side.</small></div>
+  <div class="setup-item"><b>03</b><span>STABLE + LEVEL</span><small>Tripod or fixed mount, hip height.</small></div>
+  <div class="setup-item"><b>04</b><span>GOOD LIGHT</span><small>Bright, even light; no backlit bowler.</small></div>
+</div>
+<div class="camera-frame"><video id="cameraPreview" autoplay muted playsinline></video><div class="camera-guide"><span>KEEP FULL RUN-UP + RELEASE + FOLLOW-THROUGH IN FRAME</span></div><div class="camera-badge" id="cameraBadge">CAMERA OFF</div></div>
+<div class="capture-specs"><span id="captureFps">FPS —</span><span id="captureResolution">RESOLUTION —</span><span id="captureAngle">SIDE-ON REQUIRED</span></div>
+<div id="selected" class="selected">Press “Start camera” and allow camera access.</div>
+<div class="record-actions"><button class="ghost full" id="cameraStart">Start camera</button><button class="primary full" id="recordBtn" disabled>Record 6-second test</button><button class="ghost full" id="stopBtn" disabled>Stop recording</button></div>
+<div id="recordStatus" class="record-status">Setup check: 60 FPS + side-on + good lighting.</div></div></div>
 `;
 
-const modal=document.querySelector('#modal'), modalInput=document.querySelector('#modalInput'), selected=document.querySelector('#selected');
-function open(){modal.classList.add('show')} function close(){modal.classList.remove('show')}
+const modal=document.querySelector('#modal');
+const selected=document.querySelector('#selected');
+const cameraPreview=document.querySelector('#cameraPreview');
+const cameraStart=document.querySelector('#cameraStart');
+const recordBtn=document.querySelector('#recordBtn');
+const stopBtn=document.querySelector('#stopBtn');
+const recordStatus=document.querySelector('#recordStatus');
+const cameraBadge=document.querySelector('#cameraBadge');
+const captureFps=document.querySelector('#captureFps');
+const captureResolution=document.querySelector('#captureResolution');
+
+let cameraStream=null;
+let mediaRecorder=null;
+let recordedChunks=[];
+let recordingTimer=null;
+let recorderStartTime=0;
+
+function open(){modal.classList.add('show')}
+function close(){
+  modal.classList.remove('show');
+  stopCamera();
+}
 ['demoBtn','uploadBtn','ctaBtn'].forEach(id=>document.querySelector('#'+id).addEventListener('click',open));
-document.querySelector('#watchBtn').addEventListener('click',()=>document.querySelector('#analytics').scrollIntoView({behavior:'smooth'}));
+document.querySelector('#watchBtn').addEventListener('click',()=>{
+  document.querySelector('#analytics').scrollIntoView({behavior:'smooth'});
+  setTimeout(open,350);
+});
 document.querySelector('#close').addEventListener('click',close);
-document.querySelector('#drop').addEventListener('click',()=>modalInput.click());
-modalInput.addEventListener('change',()=>{const f=modalInput.files[0];if(f)selected.textContent=`Selected: ${f.name} · ${(f.size/1048576).toFixed(1)} MB`});
+
+function setRecordStatus(text,ok=false){
+  recordStatus.textContent=text;
+  recordStatus.classList.toggle('ok',ok);
+}
+function stopCamera(){
+  if(recordingTimer) clearInterval(recordingTimer);
+  recordingTimer=null;
+  if(mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop();
+  if(cameraStream) cameraStream.getTracks().forEach(t=>t.stop());
+  cameraStream=null;
+  cameraPreview.srcObject=null;
+  cameraStart.disabled=false;
+  recordBtn.disabled=true;
+  stopBtn.disabled=true;
+  cameraBadge.textContent='CAMERA OFF';
+  cameraBadge.classList.remove('recording');
+}
+function supportedMime(){
+  const types=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
+  return types.find(t=>MediaRecorder.isTypeSupported(t))||'';
+}
+async function startCamera(){
+  if(!navigator.mediaDevices?.getUserMedia){
+    setRecordStatus('Camera capture is unavailable. Open the HTTPS Vercel site in a modern browser.');
+    return;
+  }
+  try{
+    stopCamera();
+    setRecordStatus('Requesting a 60 FPS camera…');
+    const stream=await navigator.mediaDevices.getUserMedia({
+      audio:false,
+      video:{
+        facingMode:{ideal:'environment'},
+        width:{min:1280,ideal:1920,max:1920},
+        height:{min:720,ideal:1080,max:1080},
+        frameRate:{min:60,ideal:60}
+      }
+    });
+    const track=stream.getVideoTracks()[0];
+    const settings=track.getSettings();
+    const fps=Number(settings.frameRate||0);
+    const w=Number(settings.width||0), h=Number(settings.height||0);
+    if(fps<59){
+      stream.getTracks().forEach(t=>t.stop());
+      throw new Error(`Camera delivered ${fps ? fps.toFixed(0) : 'unknown'} FPS. This test requires 60 FPS. Switch to the phone's 60 FPS video mode and try again.`);
+    }
+    if(w<1280 || h<720 || w<=h){
+      stream.getTracks().forEach(t=>t.stop());
+      throw new Error('Use landscape 1080p (or at least 720p) video. Rotate the phone horizontally and try again.');
+    }
+    cameraStream=stream;
+    cameraPreview.srcObject=stream;
+    captureFps.textContent=`${fps.toFixed(0)} FPS ✓`;
+    captureResolution.textContent=`${w} × ${h}`;
+    cameraBadge.textContent='CAMERA READY';
+    cameraBadge.classList.add('ready');
+    cameraStart.disabled=true;
+    recordBtn.disabled=false;
+    setRecordStatus('Camera passed the technical check. Confirm the side-on framing, then record one delivery.',true);
+  }catch(e){
+    console.error(e);
+    setRecordStatus(e?.message||'Could not start the camera.');
+    cameraBadge.textContent='CAMERA ERROR';
+  }
+}
+function beginRecording(){
+  if(!cameraStream) return;
+  recordedChunks=[];
+  const mime=supportedMime();
+  if(!mime){setRecordStatus('This browser cannot record the camera stream in a supported format.');return}
+  mediaRecorder=new MediaRecorder(cameraStream,{mimeType:mime,videoBitsPerSecond:12000000});
+  mediaRecorder.ondataavailable=e=>{if(e.data?.size) recordedChunks.push(e.data)};
+  mediaRecorder.onstop=async()=>{
+    const blob=new Blob(recordedChunks,{type:mime});
+    await analyzeRecording(blob);
+  };
+  mediaRecorder.start(250);
+  recorderStartTime=Date.now();
+  recordBtn.disabled=true;
+  stopBtn.disabled=false;
+  cameraBadge.textContent='● RECORDING';
+  cameraBadge.classList.add('recording');
+  setRecordStatus('Recording… bowl one natural delivery. Keep the full action in frame.',true);
+  recordingTimer=setInterval(()=>{
+    const seconds=(Date.now()-recorderStartTime)/1000;
+    recordStatus.textContent=`Recording… ${Math.min(6,seconds).toFixed(1)} / 6.0 s`;
+    if(seconds>=6) stopRecording();
+  },100);
+}
+function stopRecording(){
+  if(recordingTimer) clearInterval(recordingTimer);
+  recordingTimer=null;
+  if(mediaRecorder && mediaRecorder.state!=='inactive'){
+    mediaRecorder.stop();
+    stopBtn.disabled=true;
+    cameraBadge.textContent='PROCESSING';
+    setRecordStatus('Recording captured. Starting CricketVision analysis…');
+  }
+}
+async function analyzeRecording(blob){
+  try{
+    analysisBox.classList.add('show');
+    setAnalysisProgress(3,'LOADING');
+    selected.textContent=`Captured ${(blob.size/1048576).toFixed(1)} MB from the 60 FPS camera.`;
+    const result=await analyzeVideoFile(blob,(progress,status)=>setAnalysisProgress(progress,status));
+    showAnalysis(result);
+    setAnalysisProgress(100,'COMPLETE');
+    selected.textContent='Analysis complete. This result came directly from the controlled camera recording.';
+  }catch(e){
+    console.error(e);
+    setAnalysisProgress(0,'ERROR');
+    selected.textContent='The recorded clip could not be analyzed.';
+    document.querySelector('#analysisVerdict').textContent='Analysis failed';
+    document.querySelector('#analysisNote').textContent=e?.message||'The recording could not be decoded.';
+  }finally{
+    cameraBadge.textContent='CAMERA READY';
+    cameraBadge.classList.add('ready');
+    cameraBadge.classList.remove('recording');
+    recordBtn.disabled=!cameraStream;
+    setRecordStatus('Ready for another 6-second test delivery.',true);
+  }
+}
+cameraStart.addEventListener('click',startCamera);
+recordBtn.addEventListener('click',beginRecording);
+stopBtn.addEventListener('click',stopRecording);
+
 const analysisBox=document.createElement('div');
 analysisBox.className='analysis-results';
 analysisBox.innerHTML=`
@@ -87,10 +245,12 @@ analysisBox.innerHTML=`
     <div><span>FRAMES SAMPLED</span><strong id="resultFrames">—</strong></div>
     <div><span>VIDEO QUALITY</span><strong id="resultQuality">—</strong></div>
     <div><span>MOTION PEAK</span><strong id="resultMotion">—</strong></div>
-    <div><span>ACTION WINDOW</span><strong id="resultWindow">—</strong></div><div><span>BALL DETECTIONS</span><strong id="resultBallDetections">—</strong></div><div><span>BALL CONFIDENCE</span><strong id="resultBallConfidence">—</strong></div>
+    <div><span>ACTION WINDOW</span><strong id="resultWindow">—</strong></div>
+    <div><span>BALL DETECTIONS</span><strong id="resultBallDetections">—</strong></div>
+    <div><span>BALL CONFIDENCE</span><strong id="resultBallConfidence">—</strong></div>
   </div>
-  <div class="analysis-verdict" id="analysisVerdict">Choose a video to begin.</div>
-  <div class="analysis-note" id="analysisNote">This first engine performs real browser-side frame analysis. Cricket ball tracking and calibrated speed will be added in the computer-vision stage.</div>
+  <div class="analysis-verdict" id="analysisVerdict">Record a controlled test delivery to begin.</div>
+  <div class="analysis-note" id="analysisNote">CricketVision is currently gated to 60 FPS, landscape, side-on test recordings. The ball tracker will use the captured frames for the next computer-vision stage.</div>
 `;
 document.querySelector('.modal-card').appendChild(analysisBox);
 
@@ -110,30 +270,3 @@ function showAnalysis(result){
   document.querySelector('#analysisVerdict').textContent=result.verdict;
   document.querySelector('#analysisNote').textContent=result.note;
 }
-
-document.querySelector('#start').addEventListener('click',async()=>{
-  const f=modalInput.files[0];
-  if(!f){selected.textContent='Please choose a video first.';return}
-  if(!f.type.startsWith('video/')){selected.textContent='Please choose a video file.';return}
-  const start=document.querySelector('#start');
-  start.disabled=true;
-  start.textContent='Analyzing video…';
-  analysisBox.classList.add('show');
-  setAnalysisProgress(3,'LOADING');
-  selected.textContent='Reading video metadata…';
-  try{
-    const result=await analyzeVideoFile(f,(progress,status)=>setAnalysisProgress(progress,status));
-    showAnalysis(result);
-    setAnalysisProgress(100,'COMPLETE');
-    selected.textContent='Analysis complete. Results were generated from sampled video frames.';
-  }catch(e){
-    console.error(e);
-    setAnalysisProgress(0,'ERROR');
-    selected.textContent='Could not analyze this video in the browser. Try another MP4/MOV file.';
-    document.querySelector('#analysisVerdict').textContent='Analysis failed';
-    document.querySelector('#analysisNote').textContent=e?.message||'The video could not be decoded by this browser.';
-  }finally{
-    start.disabled=false;
-    start.textContent='Analyze again →';
-  }
-});
