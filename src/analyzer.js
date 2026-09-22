@@ -60,7 +60,7 @@ export async function analyzeVideoFile(file,onProgress=()=>{}){
     await waitForEvent(video,'loadedmetadata');
     if(!Number.isFinite(video.duration)||video.duration<=0) throw new Error('Video duration could not be read');
     const width=video.videoWidth,height=video.videoHeight,duration=video.duration;
-    const sampleCount=Math.min(18,Math.max(10,Math.ceil(duration*5)));
+    const sampleCount=Math.min(60,Math.max(36,Math.ceil(duration*10)));
     const canvas=document.createElement('canvas');
     const scale=Math.min(1,480/Math.max(width,height));
     canvas.width=Math.max(160,Math.round(width*scale));
@@ -93,7 +93,7 @@ export async function analyzeVideoFile(file,onProgress=()=>{}){
     const ball=trajectoryMetrics(detections,width,height,duration);
     const ballCount=ball.count;
     let verdict='No reliable ball track yet';
-    let note='The vision service was queried on sampled frames, but there were not enough consistent ball detections to form a trajectory.';
+    let note='The vision service was queried on a denser set of frames from the controlled 60 FPS recording, but there were not enough consistent ball detections to form a trajectory.';
     if(ballCount>=3){
       verdict='Cricket ball detected across multiple frames';
       note='A trained cricket-ball detector produced a multi-frame track. Real-world speed still requires pitch/camera calibration; pixel motion is not presented as km/h.';
