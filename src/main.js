@@ -1,4 +1,5 @@
 import './style.css';
+import { analyzeVideoFile } from './analyzer.js';
 
 const app=document.querySelector('#app');
 
@@ -75,13 +76,62 @@ document.querySelector('#watchBtn').addEventListener('click',()=>document.queryS
 document.querySelector('#close').addEventListener('click',close);
 document.querySelector('#drop').addEventListener('click',()=>modalInput.click());
 modalInput.addEventListener('change',()=>{const f=modalInput.files[0];if(f)selected.textContent=`Selected: ${f.name} · ${(f.size/1048576).toFixed(1)} MB`});
-async function runJevDecision(f){
-  const video=document.createElement('video'); video.preload='metadata'; video.src=URL.createObjectURL(f);
-  await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=reject});
-  const state={file_name:f.name,file_size_mb:Number((f.size/1048576).toFixed(2)),duration_seconds:Number(video.duration.toFixed(2)),width:video.videoWidth,height:video.videoHeight};
-  URL.revokeObjectURL(video.src);
-  const res=await fetch('/api/jev',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state})});
-  if(!res.ok) throw new Error('Jev API unavailable');
-  return res.json();
+const analysisBox=document.createElement('div');
+analysisBox.className='analysis-results';
+analysisBox.innerHTML=`
+  <div class="analysis-head"><span>CRICKETVISION VIDEO ANALYSIS</span><b id="analysisStatus">READY</b></div>
+  <div class="progress-track"><i id="analysisProgress"></i></div>
+  <div class="analysis-grid">
+    <div><span>DURATION</span><strong id="resultDuration">—</strong></div>
+    <div><span>RESOLUTION</span><strong id="resultResolution">—</strong></div>
+    <div><span>FRAMES SAMPLED</span><strong id="resultFrames">—</strong></div>
+    <div><span>VIDEO QUALITY</span><strong id="resultQuality">—</strong></div>
+    <div><span>MOTION PEAK</span><strong id="resultMotion">—</strong></div>
+    <div><span>ACTION WINDOW</span><strong id="resultWindow">—</strong></div>
+  </div>
+  <div class="analysis-verdict" id="analysisVerdict">Choose a video to begin.</div>
+  <div class="analysis-note" id="analysisNote">This first engine performs real browser-side frame analysis. Cricket ball tracking and calibrated speed will be added in the computer-vision stage.</div>
+`;
+document.querySelector('.modal-card').appendChild(analysisBox);
+
+function setAnalysisProgress(value,status){
+  document.querySelector('#analysisProgress').style.width=Math.max(0,Math.min(100,value))+'%';
+  document.querySelector('#analysisStatus').textContent=status;
 }
-document.querySelector('#start').addEventListener('click',async()=>{const f=modalInput.files[0];if(!f){selected.textContent='Please choose a video first.';return}selected.textContent='Video received. Sending structured evidence to Jev…';try{const result=await runJevDecision(f);const answers=result.answers||{};const d=answers.delivery_type;const q=answers.video_quality;const rr=answers.needs_review;const delivery=d?.choice||'UNCERTAIN';const quality=q?.choice||'UNKNOWN';const review=(rr?.noul??0)<0.5?'NO':'YES';const dc=d?.confidence?Math.round(d.confidence*100):null;const rc=rr?.noul!=null?Math.round(Math.max(rr.noul,1-rr.noul)*100):null;document.querySelector('#jevDelivery').textContent=delivery.toUpperCase();document.querySelector('#jevDeliveryConf').textContent=dc?('Confidence '+dc+'%'):'Decision returned';document.querySelector('#jevReview').textContent=review;document.querySelector('#jevReviewConf').textContent=rc?('Decision confidence '+rc+'%'):'Decision returned';document.querySelector('#jevQuality').textContent=quality.toUpperCase();selected.textContent='Jev decision complete. Evidence was classified with confidence-aware outputs.'}catch(e){selected.textContent='Demo mode: Jev is wired into the app, but the server API key is not configured yet.'}});
+function showAnalysis(result){
+  document.querySelector('#resultDuration').textContent=result.duration.toFixed(2)+' s';
+  document.querySelector('#resultResolution').textContent=result.width+' × '+result.height;
+  document.querySelector('#resultFrames').textContent=String(result.framesSampled);
+  document.querySelector('#resultQuality').textContent=result.quality.label;
+  document.querySelector('#resultMotion').textContent=result.motionPeak.toFixed(1)+' / 100';
+  document.querySelector('#resultWindow').textContent=result.actionWindow;
+  document.querySelector('#analysisVerdict').textContent=result.verdict;
+  document.querySelector('#analysisNote').textContent=result.note;
+}
+
+document.querySelector('#start').addEventListener('click',async()=>{
+  const f=modalInput.files[0];
+  if(!f){selected.textContent='Please choose a video first.';return}
+  if(!f.type.startsWith('video/')){selected.textContent='Please choose a video file.';return}
+  const start=document.querySelector('#start');
+  start.disabled=true;
+  start.textContent='Analyzing video…';
+  analysisBox.classList.add('show');
+  setAnalysisProgress(3,'LOADING');
+  selected.textContent='Reading video metadata…';
+  try{
+    const result=await analyzeVideoFile(f,(progress,status)=>setAnalysisProgress(progress,status));
+    showAnalysis(result);
+    setAnalysisProgress(100,'COMPLETE');
+    selected.textContent='Analysis complete. Results were generated from sampled video frames.';
+  }catch(e){
+    console.error(e);
+    setAnalysisProgress(0,'ERROR');
+    selected.textContent='Could not analyze this video in the browser. Try another MP4/MOV file.';
+    document.querySelector('#analysisVerdict').textContent='Analysis failed';
+    document.querySelector('#analysisNote').textContent=e?.message||'The video could not be decoded by this browser.';
+  }finally{
+    start.disabled=false;
+    start.textContent='Analyze again →';
+  }
+});
