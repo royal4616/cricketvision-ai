@@ -87,7 +87,7 @@ analysisBox.innerHTML=`
     <div><span>FRAMES SAMPLED</span><strong id="resultFrames">—</strong></div>
     <div><span>VIDEO QUALITY</span><strong id="resultQuality">—</strong></div>
     <div><span>MOTION PEAK</span><strong id="resultMotion">—</strong></div>
-    <div><span>ACTION WINDOW</span><strong id="resultWindow">—</strong></div>
+    <div><span>ACTION WINDOW</span><strong id="resultWindow">—</strong></div><div><span>BALL DETECTIONS</span><strong id="resultBallDetections">—</strong></div><div><span>BALL CONFIDENCE</span><strong id="resultBallConfidence">—</strong></div>
   </div>
   <div class="analysis-verdict" id="analysisVerdict">Choose a video to begin.</div>
   <div class="analysis-note" id="analysisNote">This first engine performs real browser-side frame analysis. Cricket ball tracking and calibrated speed will be added in the computer-vision stage.</div>
@@ -105,6 +105,8 @@ function showAnalysis(result){
   document.querySelector('#resultQuality').textContent=result.quality.label;
   document.querySelector('#resultMotion').textContent=result.motionPeak.toFixed(1)+' / 100';
   document.querySelector('#resultWindow').textContent=result.actionWindow;
+  document.querySelector('#resultBallDetections').textContent=String(result.ballDetections);
+  document.querySelector('#resultBallConfidence').textContent=result.ballConfidence?Math.round(result.ballConfidence*100)+'%':'—';
   document.querySelector('#analysisVerdict').textContent=result.verdict;
   document.querySelector('#analysisNote').textContent=result.note;
 }
